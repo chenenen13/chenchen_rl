@@ -1,0 +1,84 @@
+from __future__ import annotations
+import numpy as np
+
+
+class LinearRegression:
+    """
+    Ordinary Least Squares using the normal equation with pseudo-inverse.
+
+    Parameters
+    ----------
+    use_intercept : bool, default=True
+        If True, fit an intercept term (bias). If False, force intercept = 0.
+    """
+
+    def __init__(self, use_intercept: bool = True) -> None:
+        self.use_intercept = bool(use_intercept)
+        self.coef_: np.ndarray | None = None    # shape (n_features,)
+        self.intercept_: float | None = None
+        self._fitted: bool = False
+
+    @staticmethod
+    def _check_X_y(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        X = np.asarray(X, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+
+        # Ensure 2D X and 1D y
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+        if y.ndim != 1:
+            y = y.ravel()
+
+        if X.shape[0] != y.shape[0]:
+            raise ValueError(f"X and y must have the same number of rows: {X.shape[0]} vs {y.shape[0]}")
+        if X.shape[0] == 0:
+            raise ValueError("X and y must be non-empty.")
+        return X, y
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "LinearRegression":
+        """
+        Fit model parameters by solving (X^T X) w = X^T y via pseudo-inverse.
+
+        Returns
+        -------
+        self : LinearRegression
+        """
+        X, y = self._check_X_y(X, y)
+
+        if self.use_intercept:
+            ones = np.ones((X.shape[0], 1), dtype=X.dtype)
+            X_aug = np.hstack([ones, X])
+        else:
+            X_aug = X
+
+        theta = np.linalg.pinv(X_aug) @ y  # robust to singular X^T X
+
+        if self.use_intercept:
+            self.intercept_ = float(theta[0])
+            self.coef_ = theta[1:].copy()
+        else:
+            self.intercept_ = 0.0
+            self.coef_ = theta.copy()
+
+        self._fitted = True
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Predict target values for X.
+
+        Returns
+        -------
+        y_hat : np.ndarray, shape (n_samples,)
+        """
+        if not self._fitted:
+            raise RuntimeError("Model not fitted. Call fit(X, y) first.")
+
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(-1, 1)
+
+        y_hat = X @ self.coef_
+        if self.use_intercept:
+            y_hat = y_hat + self.intercept_
+        return y_hat
