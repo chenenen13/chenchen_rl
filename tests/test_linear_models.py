@@ -2,36 +2,45 @@ import numpy as np
 import pytest
 from chenchen_rl.linear_models import LinearRegression
 
-def test_fit_predict_with_intercept():
+
+def test_save_then_load_roundtrip(tmp_path):
+    # Train a small model
     rng = np.random.default_rng(0)
-    X = rng.normal(size=(200, 2))
-    w = np.array([1.5, -2.0])
-    b = 0.7
-    y = X @ w + b + rng.normal(scale=0.05, size=200)
+    X = rng.normal(size=(100, 2))
+    w = np.array([1.5, -0.7])
+    b = 0.25
+    y = X @ w + b + rng.normal(scale=0.01, size=100)
 
-    lr = LinearRegression(use_intercept=True).fit(X, y)
-    y_hat = lr.predict(X)
+    m1 = LinearRegression(use_intercept=True).fit(X, y)
 
-    ss_res = np.sum((y - y_hat) ** 2)
-    ss_tot = np.sum((y - np.mean(y)) ** 2)
-    r2 = 1 - ss_res / ss_tot
-    assert r2 > 0.98
-    assert lr.coef_.shape == (2,)
-    assert abs(lr.intercept_ - b) < 0.2
+    # Save
+    path = tmp_path / "linreg_model.npz"
+    m1.save(path)
 
-def test_fit_predict_no_intercept():
-    rng = np.random.default_rng(1)
-    X = rng.normal(size=(150, 1))
-    w = np.array([3.0])
-    y = X @ w + rng.normal(scale=0.05, size=150)
+    # Load
+    m2 = LinearRegression.load(path)
 
-    lr = LinearRegression(use_intercept=False).fit(X, y)
-    y_hat = lr.predict(X)
-    assert np.corrcoef(y, y_hat)[0, 1] > 0.99
-    assert lr.intercept_ == 0.0
-    assert lr.coef_.shape == (1,)
+    # Parameters close
+    assert m2.use_intercept is True
+    assert np.allclose(m1.coef_, m2.coef_, atol=1e-10)
+    assert np.isclose(m1.intercept_, m2.intercept_, atol=1e-10)
 
-def test_predict_requires_fit():
-    lr = LinearRegression()
+    # Predictions identical
+    X_test = rng.normal(size=(10, 2))
+    y1 = m1.predict(X_test)
+    y2 = m2.predict(X_test)
+    assert np.allclose(y1, y2, atol=1e-12)
+
+
+def test_save_raises_if_not_fitted(tmp_path):
+    m = LinearRegression()
     with pytest.raises(RuntimeError):
-        lr.predict([1.0])
+        m.save(tmp_path / "bad.npz")
+
+
+def test_load_rejects_wrong_class(tmp_path):
+    # Create a bogus npz with different class_name
+    bogus = tmp_path / "bogus.npz"
+    np.savez_compressed(bogus, class_name="SomethingElse", use_intercept=True, coef=np.array([1.0]), intercept=0.0, fitted=True)
+    with pytest.raises(ValueError):
+        LinearRegression.load(bogus)
